@@ -5,7 +5,6 @@
 #include "Turnouts.h"
 #include "Outputs.h"
 #include "Sensors.h"
-
 #include "EEStore.h"
 
 const char VERSION[]="99.666";
@@ -146,9 +145,12 @@ void DCCEXParser::parse(Stream  & stream,const char *com) {
         *    returns: <r CALLBACKNUM|CALLBACKSUB|CV Value)
         *    where VALUE is a number from 0-255 as read from the requested CV, or -1 if verificaiton read fails
         */
-        
-        result=DCC::writeCVByte(p[0],p[1]);
-        StringParser::send(stream,F("<r%d|%d|%d %d>"), p[2], p[3],p[0],result?p[1]:-1);
+        {
+        auto callback= [&](bool ok){
+          StringParser::send(stream,F("<r%d|%d|%d %d>"), p[2], p[3],p[0],ok?p[1]:-1);
+        }; 
+        DCC::writeCVByte(p[0],p[1],callback); 
+        }
         return;
 
 /***** WRITE CONFIGURATION VARIABLE BIT TO ENGINE DECODER ON PROGRAMMING TRACK  ****/
@@ -167,8 +169,12 @@ void DCCEXParser::parse(Stream  & stream,const char *com) {
         *    where VALUE is a number from 0-1 as read from the requested CV bit, or -1 if verificaiton read fails
         */
 
-        result=DCC::writeCVBit(p[0],p[1],p[2]);
-        StringParser::send(stream,F("<r%d|%d|%d %d %d>"), p[3],p[4], p[0],p[1],result?p[2]:-1);
+  {
+        auto callback= [&](bool ok){
+        StringParser::send(stream,F("<r%d|%d|%d %d %d>"), p[3],p[4], p[0],p[1],ok?p[2]:-1);
+        }; 
+        DCC::writeCVBit(p[0],p[1],p[2],callback); 
+        }
         return;
 
 /***** READ CONFIGURATION VARIABLE BYTE FROM ENGINE DECODER ON PROGRAMMING TRACK  ****/
@@ -184,8 +190,12 @@ void DCCEXParser::parse(Stream  & stream,const char *com) {
         *    returns: <r CALLBACKNUM|CALLBACKSUB|CV VALUE)
         *    where VALUE is a number from 0-255 as read from the requested CV, or -1 if read could not be verified
         */
-       
-        StringParser::send(stream,F("<r%d|%d|%d %d>"),p[1],p[2],p[0],DCC::readCV(p[0]));
+        {
+        auto callback=[=,&stream](int value) {       
+              StringParser::send(stream,F("<r%d|%d|%d %d>"),p[1],p[2],p[0],value);
+        };
+        DCC::readCV(p[0],callback);
+        }
         return;
 
 /***** TURN ON POWER FROM MOTOR SHIELD TO TRACKS  ****/

@@ -1,3 +1,7 @@
+
+#include <Function.h>
+
+
 #include "DCC.h"
 #include "DCCWaveform.h"
 #include "DIAG.h"
@@ -105,53 +109,103 @@ void DCC::writeCVBitMain(int cab, int cv, byte bNum, bool bValue)  {
   DCCWaveform::mainTrack.schedulePacket(b, nB, 4);
 }
 
-bool  DCC::writeCVByte(int cv, byte bValue)  {
-  uint8_t message[] = {cv1(WRITE_BYTE, cv), cv2(cv), bValue};
-  DCCWaveform::progTrack.schedulePacket(message, sizeof(message), 6);           // NMRA recommends 6 write or reset packets for decoder recovery time
-  return verifyCVByte(cv, bValue);
+
+//////////////////// PROG TRACK /////////////////////////////////////////
+ACK_STATE DCC::ackState=IGNORE;
+vl::Func<void (bool)>  DCC::ackBitCallback=NULL;
+
+void DCC::AckHandling() {
+    switch (ackState) {
+           case IGNORE: 
+                break;
+           case WAITING:
+                if (DCCWaveform::progTrack.sentResetsSincePacket>6) {
+                  ackState=IGNORE;
+                  ackBitCallback(false);
+                  ackBitCallback=NULL;
+                }
+                break;
+           case HIT:
+                ackState=IGNORE;
+                ackBitCallback(true);
+                ackBitCallback=NULL;               
+                break;
+    }
 }
 
-bool DCC::verifyCVByte(int cv, byte value) {
+  
+void  DCC::writeCVByte(int cv, byte bValue, vl::Func<void (bool)> callback)  {
+  uint8_t message[] = {cv1(WRITE_BYTE, cv), cv2(cv), bValue};
+  DCCWaveform::progTrack.schedulePacket(message, sizeof(message), 6);           // NMRA recommends 6 write or reset packets for decoder recovery time
+  verifyCVByte(cv, bValue,callback);
+}
+
+void DCC::verifyCVByte(int cv, byte value, vl::Func<void (bool)> callback) {
+  ackState=WAITING;
+  ackBitCallback=callback; 
   byte message[] = { cv1(VERIFY_BYTE, cv), cv2(cv), value};
-  return DCCWaveform::progTrack.schedulePacketWithAck(message, sizeof(message), 5);
+  DCCWaveform::progTrack.schedulePacketWithAck(message, sizeof(message), 5);
   }
 
-bool DCC::writeCVBit(int cv, byte bNum, bool bValue)  {
-  if (bNum>=8) return false;
+
+
+
+void DCC::writeCVBit(int cv, byte bNum, bool bValue, vl::Func<void (bool)> callback)  {
+  if (bNum>=8) {
+    callback(false);
+    return;
+  }
   byte instruction=WRITE_BIT | bValue?BIT_ON:BIT_OFF | bNum;
   byte message[] = {cv1(BIT_MANIPULATE, cv), cv2(cv), instruction };
   DCCWaveform::progTrack.schedulePacket(message, sizeof(message), 6);           // NMRA recommends 6 write or reset packets for decoder recovery time 
-  return verifyCVBit(cv, bNum, bValue); 
+  verifyCVBit(cv, bNum, bValue,callback); 
 }
 
-bool DCC::verifyCVBit(int cv, byte bNum, bool bValue)  {
-  if (bNum>=8) return false;
+void DCC::verifyCVBit(int cv, byte bNum, bool bValue, vl::Func<void (bool)> callback)  {
+  if (bNum>=8) {
+    callback(false);
+    return;
+  }
   byte instruction=VERIFY_BIT | bValue?BIT_ON:BIT_OFF | bNum;
   byte message[] = {cv1(BIT_MANIPULATE, cv), cv2(cv), instruction };
-  return DCCWaveform::progTrack.schedulePacketWithAck(message, sizeof(message), 5);           // NMRA recommends 6 write or reset packets for decoder recovery time
+  DCCWaveform::progTrack.schedulePacket(message, sizeof(message), 5);           // NMRA recommends 6 write or reset packets for decoder recovery time
+  ackState=WAITING;
+  ackBitCallback=callback;
+  }
+
+void DCC::readCVBit(int cv, byte bNum, vl::Func<void (int)>callback)  {
+  if (bNum>=8) {
+    callback(-1);
+    return;
+  }
+  
+  auto verifyZeroResult=[&](bool ok){
+    callback(ok?0:-1);
+    };
+  
+  auto verifyOneResult=[&](bool ok)  {
+        if (ok) callback(1);
+        else verifyCVBit(cv,bNum,false,verifyZeroResult);
+   };
+  
+   verifyCVBit(cv,bNum,true,verifyOneResult);
 }
 
-int DCC::readCVBit(int cv, byte bNum)  {
-  if (bNum>=8) return -1;
-   if (verifyCVBit(cv, bNum,true)) return 1; 
-   // failed verify might be a zero, or an error so must check again  
-   if (verifyCVBit(cv, bNum,false)) return 0; 
-   return -1;
-}
-
-
-int DCC::readCV(int cv)  {
+void DCC::readCV(int cv, vl::Func<void (int)> callback)  {
+  /***************************** TODO
   byte value = 0;
   // get each bit individually by validating against a one. 
   for (int bNum = 0; bNum < 8; bNum++) {
     value += verifyCVBit(cv,bNum,true) << bNum;
   }
   return verifyCVByte(cv, value) ? value : -1;
+  *******************************************************/
 }
 
   
 void DCC::loop()  {
   DCCWaveform::loop(); // powwer overload checks
+  AckHandling();
   // if the main track transmitter still has a pending packet, skip this loop.
   if ( DCCWaveform::mainTrack.packetPending) return;
 
@@ -172,7 +226,8 @@ void DCC::loop()  {
   }
 }
 
-int DCC::getLocoId() {
+void DCC::getLocoId(vl::Func<void (int)> callback) {
+  /****************************************
   switch (readCVBit(29,5)) {
     case 1:  
            // long address : get CV#17 and CV#18
@@ -190,6 +245,7 @@ int DCC::getLocoId() {
            break;
   }
   return -1;
+  ******************/
 }
 
 ///// Private helper functions below here /////////////////////

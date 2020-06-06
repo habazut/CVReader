@@ -2,35 +2,44 @@
 #define DCC_h
 #include <Arduino.h>
 #include "Config.h"
+#include <Function.h>
 
-
+enum ACK_STATE {IGNORE,WAITING,HIT};
 class DCC {
   public:
 
   static void begin();
   static void loop();
 
-  // Public DCC API functions
+  // Public main Track DCC API functions
   static void setThrottle( uint16_t cab, uint8_t tSpeed, bool tDirection);
-  static int  readCV(int cv);
-  static int  readCVBit(int cv, byte bNum);  // -1 for error
-  static bool writeCVByte(int cv, byte bValue) ;
-  static bool verifyCVByte(int cv,byte bValue);
-  static bool writeCVBit(int cv, byte bNum, bool bValue);
-  static bool verifyCVBit(int cv, byte bNum, bool bValue);
-  static void writeCVByteMain(int cab, int cv, byte bValue);
-  static void writeCVBitMain(int cab, int cv, byte bNum, bool bValue);
   static void setFunction( int cab, byte fByte, byte eByte);
   static void setFunction( int cab, byte fByte);
   static void setAccessory(int aAdd, byte aNum, bool activate) ;
   static bool writeTextPacket( byte *b, int nBytes);
-  static int getLocoId();
+  static void writeCVByteMain(int cab, int cv, byte bValue);
+  static void writeCVBitMain(int cab, int cv, byte bNum, bool bValue);
+  
+  // Public PROG track API functions 
+  static void  readCV(int cv,vl::Func<void (int)> callback);  // -1 for error
+  static void writeCVByte(int cv, byte bValue, vl::Func<void (bool)> callback) ;
+  static void verifyCVByte(int cv,byte bValue,vl::Func<void (bool)> callback);
+  
+  static void readCVBit(int cv, byte bNum, vl::Func<void (int)> callback);  // -1 for error
+  static void writeCVBit(int cv, byte bNum, bool bValue, vl::Func<void (bool)> callback);
+  static void verifyCVBit(int cv, byte bNum, bool bValue, vl::Func<void (bool)> callback);
+ 
+  static void getLocoId(vl::Func<void (int)> callback);
 
 private: 
   struct LOCO {
      int loco;
      byte speedCode;
   };
+  
+  static ACK_STATE ackState;
+  static vl::Func<void (bool)> ackBitCallback;
+  static void AckHandling();
   static void setThrottle2( uint16_t cab, uint8_t speedCode);
   static void updateLocoReminder(int loco, byte speedCode);
   static int nextLoco;
